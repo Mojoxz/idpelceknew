@@ -1,74 +1,75 @@
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-import os
+from tkinter import filedialog, messagebox, simpledialog
 
-def pilih_file():
+def cek_sama_kolom_IJ_satu_sheet():
     file_path = filedialog.askopenfilename(
         title="Pilih File Excel",
-        filetypes=[("Excel files", "*.xlsx *.xls")]
+        filetypes=[("Excel Files", "*.xlsx *.xls")]
     )
-    if file_path:
-        entry_file.delete(0, tk.END)
-        entry_file.insert(0, file_path)
-
-def sortir_data():
-    file_path = entry_file.get()
-    if not file_path or not os.path.exists(file_path):
-        messagebox.showerror("Error", "File tidak ditemukan.")
+    if not file_path:
         return
-    
+
     try:
-        # Ambil semua sheet
-        xls = pd.ExcelFile(file_path)
-        output_frames = []
+        excel_file = pd.ExcelFile(file_path)
+        # Tampilkan daftar sheet untuk dipilih
+        sheet_names = excel_file.sheet_names
+        sheet = simpledialog.askstring("Pilih Sheet", f"Masukkan nama sheet dari daftar ini:\n\n{', '.join(sheet_names)}")
 
-        for sheet_name in xls.sheet_names:
-            # Baca file dengan header di baris ke-8 (indeks 7)
-            df = pd.read_excel(file_path, sheet_name=sheet_name, header=7)
-
-            # Cek apakah kolom SLALWBP dan SAHLWBP ada
-            if "SLALWBP" in df.columns and "SAHLWBP" in df.columns:
-                filtered = df[df["SLALWBP"] == df["SAHLWBP"]]
-                if not filtered.empty:
-                    filtered["SHEET"] = sheet_name  # tandai sheet asal
-                    output_frames.append(filtered)
-
-        if not output_frames:
-            messagebox.showinfo("Hasil", "Tidak ada data dengan SLALWBP = SAHLWBP ditemukan.")
+        if not sheet or sheet not in sheet_names:
+            messagebox.showerror("Error", "Nama sheet tidak ditemukan di file.")
             return
 
-        # Gabungkan hasil dari semua sheet
-        hasil = pd.concat(output_frames, ignore_index=True)
+        # Baca sheet tanpa header (data langsung)
+        df = pd.read_excel(file_path, sheet_name=sheet, header=None)
 
-        # Simpan ke file Excel baru
-        output_path = os.path.join(os.path.dirname(file_path), "hasil_sortir_SLALWBP_SAHLWBP.xlsx")
-        hasil.to_excel(output_path, index=False)
+        # Pastikan kolom I dan J (kolom ke 9 dan 10) ada
+        if df.shape[1] < 10:
+            messagebox.showerror("Error", f"Sheet {sheet} tidak memiliki kolom I dan J.")
+            return
 
-        messagebox.showinfo("Selesai", f"Hasil penyortiran disimpan di:\n{output_path}")
+        # Bandingkan kolom I dan J
+        kondisi_sama = df.iloc[:, 8] == df.iloc[:, 9]
+
+        # Filter baris yang kolom I dan J-nya sama
+        hasil_sama = df[kondisi_sama]
+
+        if hasil_sama.empty:
+            messagebox.showinfo("Info", f"Tidak ditemukan data yang sama antara kolom I dan J di sheet {sheet}.")
+        else:
+            save_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel Files", "*.xlsx")],
+                title="Simpan Hasil (Baris Sama I=J)"
+            )
+            if save_path:
+                hasil_sama.to_excel(save_path, index=False, header=False, sheet_name=sheet)
+                messagebox.showinfo("Selesai", f"Hasil baris yang sama disimpan ke:\n{save_path}")
 
     except Exception as e:
-        messagebox.showerror("Error", f"Terjadi kesalahan:\n{e}")
+        messagebox.showerror("Error", str(e))
 
-# GUI Setup
+
+# GUI
 root = tk.Tk()
-root.title("Sortir SLALWBP = SAHLWBP - PLN Data")
-root.geometry("600x200")
-root.resizable(False, False)
+root.title("Cek Data Sama Kolom I dan J (1 Sheet)")
+root.geometry("460x220")
 
-frame = ttk.Frame(root, padding=20)
-frame.pack(fill="both", expand=True)
-
-ttk.Label(frame, text="Pilih File Excel PLN:", font=("Arial", 11)).pack(anchor="w")
-
-file_frame = ttk.Frame(frame)
-file_frame.pack(fill="x", pady=5)
-
-entry_file = ttk.Entry(file_frame, width=60)
-entry_file.pack(side="left", padx=(0, 10), fill="x", expand=True)
-
-ttk.Button(file_frame, text="Browse", command=pilih_file).pack(side="right")
-
-ttk.Button(frame, text="Sortir Data (SLALWBP = SAHLWBP)", command=sortir_data).pack(pady=20)
+tk.Label(
+    root,
+    text="Cek baris di mana kolom I dan J memiliki nilai yang sama\n"
+         "Menampilkan semua kolom dari A sampai Q",
+    wraplength=400,
+    justify="center"
+).pack(pady=20)
+tk.Button(
+    root,
+    text="Pilih File dan Jalankan",
+    command=cek_sama_kolom_IJ_satu_sheet,
+    bg="#2196F3",
+    fg="white",
+    height=2
+).pack()
+tk.Label(root, text="Hasil disimpan ke file Excel baru (1 sheet)").pack(pady=10)
 
 root.mainloop()
