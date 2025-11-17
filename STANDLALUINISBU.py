@@ -1,13 +1,10 @@
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, ttk, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
-# Variabel global untuk menyimpan hasil sortir terakhir
-filtered_df_global = None
-
-def load_excel():
+def cek_kolom_LM_satu_sheet():
     file_path = filedialog.askopenfilename(
-        title="Pilih file Excel",
+        title="Pilih File Excel",
         filetypes=[("Excel Files", "*.xlsx *.xls")]
     )
     if not file_path:
@@ -15,96 +12,55 @@ def load_excel():
 
     try:
         excel_file = pd.ExcelFile(file_path)
-        sheet_combo['values'] = excel_file.sheet_names
-        sheet_combo.current(0)
-        sheet_combo.file_path = file_path
-        messagebox.showinfo("Sukses", f"File berhasil dimuat:\n{file_path}\n\nPilih sheet untuk diproses.")
-    except Exception as e:
-        messagebox.showerror("Error", f"Gagal membuka file Excel:\n{e}")
+        # Pilih nama sheet
+        sheet_names = excel_file.sheet_names
+        sheet = simpledialog.askstring(
+            "Pilih Sheet", f"Masukkan nama sheet dari daftar ini:\n\n{', '.join(sheet_names)}"
+        )
 
-def process_sheet():
-    global filtered_df_global
-    try:
-        file_path = sheet_combo.file_path
-        sheet_name = sheet_combo.get()
-        df = pd.read_excel(file_path, sheet_name=sheet_name, header=8)  # baris ke-9 jadi header
-
-        if "STAND LALU" not in df.columns or "STAND INI" not in df.columns:
-            messagebox.showerror("Error", "Kolom 'STAND LALU' atau 'STAND INI' tidak ditemukan.")
+        if not sheet or sheet not in sheet_names:
+            messagebox.showerror("Error", "Nama sheet tidak ditemukan di file.")
             return
 
-        # Filter data yang STAND LALU ≠ STAND INI
-        filtered_df = df[df["STAND LALU"] != df["STAND INI"]]
-        filtered_df_global = filtered_df  # Simpan untuk tombol download
+        # Baca file Excel dengan header di baris ke-9 (index 8)
+        df = pd.read_excel(file_path, sheet_name=sheet, header=8, usecols="A:P")
 
-        # Tampilkan hasil ke Treeview
-        for i in tree.get_children():
-            tree.delete(i)
+        # Pastikan kolom minimal 13 (karena L & M adalah kolom ke-12 dan ke-13)
+        if df.shape[1] < 13:
+            messagebox.showerror("Error", f"Sheet {sheet} tidak memiliki kolom L dan M (minimal 13 kolom).")
+            return
 
-        tree["columns"] = list(filtered_df.columns)
-        tree["show"] = "headings"
+        # Ambil kolom L dan M berdasarkan posisi
+        kolom_L = df.columns[11]  # kolom ke-12
+        kolom_M = df.columns[12]  # kolom ke-13
 
-        for col in filtered_df.columns:
-            tree.heading(col, text=col)
-            tree.column(col, width=120, anchor="center")
+        # Filter baris dengan nilai L = M
+        df_sama = df[df[kolom_L] == df[kolom_M]]
 
-        for _, row in filtered_df.iterrows():
-            tree.insert("", "end", values=list(row))
-
-        messagebox.showinfo("Selesai", f"Menampilkan {len(filtered_df)} data yang STAND LALU ≠ STAND INI")
+        if df_sama.empty:
+            messagebox.showinfo("Info", f"Tidak ada baris dengan kolom L dan M sama di sheet {sheet}.")
+        else:
+            save_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel Files", "*.xlsx")],
+                title="Simpan Hasil Kolom L=M"
+            )
+            if save_path:
+                df_sama.to_excel(save_path, index=False, sheet_name=sheet)
+                messagebox.showinfo("Selesai", f"Hasil kolom L=M berhasil disimpan ke:\n{save_path}")
 
     except Exception as e:
-        messagebox.showerror("Error", f"Gagal memproses sheet:\n{e}")
+        messagebox.showerror("Error", str(e))
 
-def save_to_excel():
-    global filtered_df_global
-    if filtered_df_global is None or filtered_df_global.empty:
-        messagebox.showwarning("Peringatan", "Belum ada data yang bisa disimpan.\nSilakan klik 'Periksa Sheet' dulu.")
-        return
-
-    file_path = filedialog.asksaveasfilename(
-        defaultextension=".xlsx",
-        filetypes=[("Excel Files", "*.xlsx")],
-        title="Simpan hasil sortir sebagai..."
-    )
-    if not file_path:
-        return
-
-    try:
-        filtered_df_global.to_excel(file_path, index=False)
-        messagebox.showinfo("Berhasil", f"Hasil sortir berhasil disimpan ke:\n{file_path}")
-    except Exception as e:
-        messagebox.showerror("Error", f"Gagal menyimpan file Excel:\n{e}")
-
-# === GUI ===
+# GUI
 root = tk.Tk()
-root.title("Pemeriksa STAND LALU vs STAND INI (Excel)")
-root.geometry("1100x650")
+root.title("Cek Kolom L dan M Sama (1 Sheet)")
+root.geometry("420x200")
 
-frame = tk.Frame(root)
-frame.pack(pady=10)
-
-load_btn = tk.Button(frame, text="📂 Pilih File Excel", command=load_excel)
-load_btn.grid(row=0, column=0, padx=5)
-
-sheet_combo = ttk.Combobox(frame, state="readonly", width=30)
-sheet_combo.grid(row=0, column=1, padx=5)
-
-process_btn = tk.Button(frame, text="🔍 Periksa Sheet", command=process_sheet)
-process_btn.grid(row=0, column=2, padx=5)
-
-save_btn = tk.Button(frame, text="💾 Simpan Hasil ke Excel", command=save_to_excel)
-save_btn.grid(row=0, column=3, padx=5)
-
-tree_frame = tk.Frame(root)
-tree_frame.pack(fill="both", expand=True)
-
-tree_scroll = tk.Scrollbar(tree_frame)
-tree_scroll.pack(side="right", fill="y")
-
-tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set)
-tree.pack(fill="both", expand=True)
-
-tree_scroll.config(command=tree.yview)
+tk.Label(root, text="Cek baris dengan nilai kolom L dan M yang sama\n(header di baris ke-9, kolom A–P)", 
+         wraplength=380, justify="center").pack(pady=20)
+tk.Button(root, text="Pilih File dan Jalankan", command=cek_kolom_LM_satu_sheet, 
+          bg="#2196F3", fg="white", height=2).pack()
+tk.Label(root, text="Hasil disimpan ke 1 file Excel (1 sheet)").pack(pady=10)
 
 root.mainloop()
